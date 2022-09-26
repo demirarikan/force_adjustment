@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 from time import sleep
+from xmlrpc.client import Boolean
 
 import atiiaftt 
 import pyigtl
@@ -12,9 +13,13 @@ import numpy as np
 class ForceSensorClient():
 
     def __init__(self):
-        self.client = None
+        self.open_igt_client = None
         self.sensor = None
         self.reset_flag = False
+        self.force_sensor_reset_listener = rospy.Subscriber("force_sensor_reset", Boolean, force_sensor_reset_listener_callback)
+
+    def force_sensor_reset_listener_callback(self, data):
+        self.reset_flag = data
     
     def get_average_voltage_readings(self):
         """
@@ -24,10 +29,10 @@ class ForceSensorClient():
         sum = np.array([0.0,0.0,0.0,0.0,0.0,0.0])
         divisor = 100.0
         for i in range(100):
-            voltages = self.client.wait_for_message("voltage_server", timeout=5)
+            voltages = self.open_igt_client.wait_for_message("voltage_server", timeout=5)
             if voltages == None:
                 print("TIMEOUT REACHED!\nConnection could not be established, please restart the server.")
-                self.client.stop()
+                self.open_igt_client.stop()
                 sys.exit()
             sum += openIGTLmessage_to_list(voltages)
 
@@ -76,10 +81,7 @@ def create_force_torque_message(force_torque_values):
 if __name__ == "__main__":
 
     client = ForceSensorClient()
-    client.client = pyigtl.OpenIGTLinkClient(host="10.23.0.71", port=18947)
-    
-    # Start client, with the given host and port
-    client = pyigtl.OpenIGTLinkClient(host="10.23.0.71", port=18947)
+    client.open_igt_client = pyigtl.OpenIGTLinkClient(host="10.23.0.71", port=18947)
 
     # Setting up the sensor object
     cal_file="FT28270.cal"
@@ -99,33 +101,32 @@ if __name__ == "__main__":
     torque_unit_str=atiiaftt.FTUnit.TORQUE_N_M
 
     print("Using calibration file: '{}'".format(cal_file))
-    ftSensor01=atiiaftt.FTSensor(cal_file,cal_file_index)
+    client.sensor = atiiaftt.FTSensor(cal_file,cal_file_index)
 
-    ftSensor01.setToolTransform(translation_floats,translation_dist_unit,translation_angle_unit)
+    client.sensor.setToolTransform(translation_floats,translation_dist_unit,translation_angle_unit)
     # Bias the sensor
-    bias_readings = get_average_voltage_readings()
+    bias_readings = client.get_average_voltage_readings()
     print(bias_readings)
-    ftSensor01.bias(bias_readings)
+    client.sensor.bias(bias_readings)
 
     # Initialize the publisher and node
     force_torque_publisher = rospy.Publisher("ATI_force_torque", ForceTorque, queue_size=10)
     rospy.init_node("votlage_to_force_converter", anonymous=True)
 
-    # Set the reset flag to false. Set to True if you want to reset the sensor readings.
-    ftSensor01.reset_flag = False
-
     # Start conversion and publishing loop
     while True:
-        messages = client.get_latest_messages()
+        messages = client.open_igt_client.get_latest_messages()
         for message in messages:
-            force_torque_values = convert_voltage_to_force(message)
+            force_torque_values = client.convert_voltage_to_force(message)
             print("Forces: {}".format(force_torque_values))
             force_torque_publisher.publish(create_force_torque_message(force_torque_values))
-        if ftSensor01.reset_flag:
-            bias_readings = get_average_voltage_readings()
-            ftSensor01.bias(bias_readings)
-            reset = False
+        if client.reset_flag:
+            print("Resetting sensor readings...")
+            bias_readings = client.get_average_voltage_readings()
+            client.sensor.bias(bias_readings)
+            print("Done!")
+            client.reset_flag = False
         if rospy.is_shutdown():
             print("Shutting down")
-            client.stop()
+            client.open_igt_client.stop()
             sys.exit()

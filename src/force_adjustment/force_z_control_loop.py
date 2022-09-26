@@ -33,7 +33,7 @@ class RobotInstance:
         
 
     def current_pose_callback(self, data):
-        self.current_pose = data
+        self.current_pose = data.poseStamped
 
     def fz_callback(self, data):
         self.force_torque = data
@@ -44,26 +44,84 @@ class RobotInstance:
     def pose_reached(self, desired_pose):
         current_position = self.current_pose.pose.position
         current_orientation = self.current_pose.pose.orientation
+        desired_position = desired_pose.pose.position
+        desired_orientation = desired_pose.pose.position
 
+    def generate_base_tool_transformation_matrix(self):
+        translation_matrix = np.array([self.current_pose.pose.position.x,
+                                       self.current_pose.pose.position.y,
+                                       self.current_pose.pose.position.z])
 
+        rotation = R.from_quat([self.current_pose.pose.orientation.x, 
+                                self.current_pose.pose.orientation.y, 
+                                self.current_pose.pose.orientation.z, 
+                                self.current_pose.pose.orientation.w])
+        rotation_matrix = rotation.as_dcm()
 
-def generate_base_tool_transformation_matrix(robot_instance_object):
-    translation_matrix = np.array([robot_instance_object.current_pose.poseStamped.pose.position.x,
-                                   robot_instance_object.current_pose.poseStamped.pose.position.y,
-                                   robot_instance_object.current_pose.poseStamped.pose.position.z])
+        transformation_matrix = np.array([[rotation_matrix[0][0], rotation_matrix[0][1], rotation_matrix[0][2], translation_matrix[0]],
+                                          [rotation_matrix[1][0], rotation_matrix[1][1], rotation_matrix[1][2], translation_matrix[1]],
+                                          [rotation_matrix[2][0], rotation_matrix[2][1], rotation_matrix[2][2], translation_matrix[2]],
+                                          [0, 0, 0, 1]])
 
-    rotation = R.from_quat([robot_instance_object.current_pose.poseStamped.pose.orientation.x, 
-                            robot_instance_object.current_pose.poseStamped.pose.orientation.y, 
-                            robot_instance_object.current_pose.poseStamped.pose.orientation.z, 
-                            robot_instance_object.current_pose.poseStamped.pose.orientation.w])
-    rotation_matrix = rotation.as_dcm()
+        return transformation_matrix
 
-    transformation_matrix = np.array([[rotation_matrix[0][0], rotation_matrix[0][1], rotation_matrix[0][2], translation_matrix[0]],
-                                      [rotation_matrix[1][0], rotation_matrix[1][1], rotation_matrix[1][2], translation_matrix[1]],
-                                      [rotation_matrix[2][0], rotation_matrix[2][1], rotation_matrix[2][2], translation_matrix[2]],
-                                      [0, 0, 0, 1]])
+    def correct_force(self, low):
+        if low:
+            print("increasing force...")
+            transformed_coordinates = transform_tool_to_base(self.generate_base_tool_transformation_matrix(self), self.step_size)
 
-    return transformation_matrix
+            new_pose = PoseStamped()
+            new_pose.header.stamp = rospy.Time.now()
+            new_pose.header.frame_id = 'iiwa_link_0'
+            new_pose.pose.position.x = transformed_coordinates[0]
+            new_pose.pose.position.y = transformed_coordinates[1]
+            new_pose.pose.position.z = transformed_coordinates[2]
+            new_pose.pose.orientation = self.current_pose.pose.orientation
+
+            print("publishing new pose...")
+            self.publish_pose(new_pose)
+            rospy.sleep(1)
+        else: 
+            print("decreasing force")
+            transformed_coordinates = transform_tool_to_base(self.generate_base_tool_transformation_matrix(self), -self.step_size)
+
+            new_pose = PoseStamped()
+            new_pose.header.stamp = rospy.Time.now()
+            new_pose.header.frame_id = 'iiwa_link_0'
+            new_pose.pose.position.x = transformed_coordinates[0]
+            new_pose.pose.position.y = transformed_coordinates[1]
+            new_pose.pose.position.z = transformed_coordinates[2]
+            new_pose.pose.orientation = self.current_pose.pose.orientation
+
+            print("publishing new pose...")
+            self.publish_pose(new_pose)
+            rospy.sleep(1)
+ 
+    def check_force(self):
+        if self.force_torque is not None and self.current_pose is not None:
+                if abs(self.force_torque.fz) < self.lower_threshold:
+                    self.correct_force(self, True)
+                    
+                if abs(self.force_torque.fz) > self.upper_threshold:
+                    self.correct_force(self, False)
+                else:
+                    return
+
+    def start_control_loop(self):
+        while True:
+            if self.force_torque is not None and self.current_pose is not None:
+                if abs(self.force_torque.fz) < self.lower_threshold:
+                    #TODO: Check if correct force should be replaced with check force
+                    self.correct_force(self, True)
+
+                elif abs(self.force_torque.fz) > self.upper_threshold:
+                    self.correct_force(self, False)
+
+                else: 
+                    self.goal_pose.pose.position.z = self.current_pose.pose.position.z
+                    self.publish_pose(self.goal_pose)
+            else: 
+                continue
 
 
 def transform_tool_to_base(transformation_matrix, step_size):
@@ -77,14 +135,14 @@ def create_goal_pose_message(robot_instance_object, axis, distance):
     goal_pose.header.stamp = rospy.Time.now()
     goal_pose.header.frame_id = 'iiwa_link_0'
 
-    goal_pose.pose.position.x = robot_instance_object.current_pose.poseStamped.pose.position.x
-    goal_pose.pose.position.y = robot_instance_object.current_pose.poseStamped.pose.position.y 
-    goal_pose.pose.position.z = robot_instance_object.current_pose.poseStamped.pose.position.z
+    goal_pose.pose.position.x = robot_instance_object.current_pose.pose.position.x
+    goal_pose.pose.position.y = robot_instance_object.current_pose.pose.position.y 
+    goal_pose.pose.position.z = robot_instance_object.current_pose.pose.position.z
 
-    goal_pose.pose.orientation.x = robot_instance_object.current_pose.poseStamped.pose.orientation.x
-    goal_pose.pose.orientation.y = robot_instance_object.current_pose.poseStamped.pose.orientation.y
-    goal_pose.pose.orientation.z = robot_instance_object.current_pose.poseStamped.pose.orientation.z
-    goal_pose.pose.orientation.w = robot_instance_object.current_pose.poseStamped.pose.orientation.w
+    goal_pose.pose.orientation.x = robot_instance_object.current_pose.pose.orientation.x
+    goal_pose.pose.orientation.y = robot_instance_object.current_pose.pose.orientation.y
+    goal_pose.pose.orientation.z = robot_instance_object.current_pose.pose.orientation.z
+    goal_pose.pose.orientation.w = robot_instance_object.current_pose.pose.orientation.w
 
     if(axis == 0):
         goal_pose.pose.position.x += distance
@@ -95,67 +153,6 @@ def create_goal_pose_message(robot_instance_object, axis, distance):
     if(axis == 2):
         goal_pose.pose.position.z += distance
     return goal_pose
-    
-
-def correct_force(robot_instance_object, low):
-    if low:
-        print("increasing force...")
-        transformed_coordinates = transform_tool_to_base(generate_base_tool_transformation_matrix(robot_instance_object), robot_instance_object.step_size)
-
-        new_pose = PoseStamped()
-        new_pose.header.stamp = rospy.Time.now()
-        new_pose.header.frame_id = 'iiwa_link_0'
-        new_pose.pose.position.x = transformed_coordinates[0]
-        new_pose.pose.position.y = transformed_coordinates[1]
-        new_pose.pose.position.z = transformed_coordinates[2]
-        new_pose.pose.orientation = robot_instance_object.current_pose.poseStamped.pose.orientation
-        
-        print("publishing new pose...")
-        robot_instance_object.publish_pose(new_pose)
-        rospy.sleep(1)
-    else: 
-        print("decreasing force")
-        transformed_coordinates = transform_tool_to_base(generate_base_tool_transformation_matrix(robot_instance_object), -robot_instance_object.step_size)
-
-        new_pose = PoseStamped()
-        new_pose.header.stamp = rospy.Time.now()
-        new_pose.header.frame_id = 'iiwa_link_0'
-        new_pose.pose.position.x = transformed_coordinates[0]
-        new_pose.pose.position.y = transformed_coordinates[1]
-        new_pose.pose.position.z = transformed_coordinates[2]
-        new_pose.pose.orientation = robot_instance_object.current_pose.poseStamped.pose.orientation
-        
-        print("publishing new pose...")
-        robot_instance_object.publish_pose(new_pose)
-        rospy.sleep(1)
-
-
-def check_force(robot_instance_object):
-    if robot_instance_object.force_torque is not None and robot_instance_object.current_pose is not None:
-            if abs(robot_instance_object.force_torque.fz) < robot_instance_object.lower_threshold:
-                correct_force(robot_instance_object, True)
-                
-            if abs(robot_instance_object.force_torque.fz) > robot_instance_object.upper_threshold:
-                correct_force(robot_instance_object, False)
-            else:
-                return
-
-
-def start_control_loop(robot_instance_object):
-    while True:
-        if robot_instance_object.force_torque is not None and robot_instance_object.current_pose is not None:
-            if abs(robot_instance_object.force_torque.fz) < robot_instance_object.lower_threshold:
-                #TODO: Check if correct force should be replaced with check force
-                correct_force(robot_instance_object, True)
-                
-            elif abs(robot_instance_object.force_torque.fz) > robot_instance_object.upper_threshold:
-                correct_force(robot_instance_object, False)
-
-            else: 
-                robot_instance_object.goal_pose.pose.position.z = robot_instance_object.current_pose.poseStamped.pose.position.z
-                robot_instance_object.publish_pose(robot_instance_object.goal_pose)
-        else: 
-            continue
 
 
 if __name__ == "__main__":

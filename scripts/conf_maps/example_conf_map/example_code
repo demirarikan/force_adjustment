@@ -1,0 +1,28 @@
+  if save_result:
+        shared_image = imfusion.SharedImage(np.expand_dims(ray_casted_volume, -1))
+        shared_image.spacing = imfusion_model[0].spacing
+        shared_image.matrix = imfusion_model[0].matrix
+
+        out_set = imfusion.SharedImageSet()
+        out_set.add(shared_image)
+
+        imfusion.executeAlgorithm('IO;ImFusionFile', [out_set],
+                                  imfusion.Properties({'location': save_path}))
+
+
+
+
+
+    # For each pose, calculate the corresponding confidence map.
+    confidence_maps = {}
+    for i, pose in enumerate(poses):
+        print("________________\nlooking at pose ", str(pose), "with index ", i)
+        confidence_maps[pose] = run_us_sweep_for_pose(pose, data, dims, transducer_width, model_name, material_type,
+                                                      iter_filepath_prefix, i)
+
+
+        # Run the confidence map calculation and save the map.
+        confidence_maps_params = \
+            get_algorithm_properties_from_iws(ws_filepath, 'Compute Confidence Maps')
+        confidence_maps = imfusion.executeAlgorithm('Ultrasound;Compute Confidence Maps', flipped_sweeps,
+                                                    confidence_maps_params)

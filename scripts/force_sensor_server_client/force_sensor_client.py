@@ -1,14 +1,11 @@
-import os
 import sys
-import logging
-from time import sleep
-from xmlrpc.client import Boolean
-
 import atiiaftt 
 import pyigtl
 import rospy
-from force_adjustment.msg import ForceTorque
 import numpy as np
+
+from force_adjustment.msg import ForceTorque
+from std_msgs.msg import Bool
 
 class ForceSensorClient():
 
@@ -16,9 +13,9 @@ class ForceSensorClient():
         self.open_igt_client = None
         self.sensor = None
         self.reset_flag = False
-        self.force_sensor_reset_listener = rospy.Subscriber("force_sensor_reset", Boolean, force_sensor_reset_listener_callback)
+        self.force_sensor_reset_sub = rospy.Subscriber("force_sensor_reset", Bool, self.force_sensor_reset_sub_callback)
 
-    def force_sensor_reset_listener_callback(self, data):
+    def force_sensor_reset_sub_callback(self, data):
         self.reset_flag = data
     
     def get_average_voltage_readings(self):

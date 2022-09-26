@@ -5,7 +5,7 @@ from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Time
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-import setup_control_mode
+from . import setup_control_mode
 
 
 class RobotInstance:
@@ -14,7 +14,7 @@ class RobotInstance:
 
         self.current_pose_subscriber = rospy.Subscriber("/iiwa/state/CartesianPose", CartesianPose, self.current_pose_callback)
         self.force_torque_subscriber = rospy.Subscriber("ATI_force_torque", ForceTorque, self.fz_callback)
-        self.new_pose_publisher = rospy.Publisher("/iiwa/command/CartesianPose", PoseStamped, queue_size=5)
+        self.new_pose_publisher = rospy.Publisher("/iiwa/command/CartesianPoseLin", PoseStamped, queue_size=5)
 
         self.current_pose = None
         self.start_pose = None
@@ -22,8 +22,12 @@ class RobotInstance:
         self.goal_pose = None
         
         self.force_torque = None
-        self.upper_threshold = 10
-        self.lower_threshold = 5
+        self.upper_threshold = None
+        self.lower_threshold = None
+
+        self.upper_deviation = None
+        self.lower_deviation = None
+
         self.desired_force = None
         self.step_size = 0.0005
         
@@ -36,6 +40,11 @@ class RobotInstance:
 
     def publish_pose(self, pose):
         self.new_pose_publisher.publish(pose)
+
+    def pose_reached(self, desired_pose):
+        current_position = self.current_pose.pose.position
+        current_orientation = self.current_pose.pose.orientation
+
 
 
 def generate_base_tool_transformation_matrix(robot_instance_object):
@@ -136,12 +145,11 @@ def start_control_loop(robot_instance_object):
     while True:
         if robot_instance_object.force_torque is not None and robot_instance_object.current_pose is not None:
             if abs(robot_instance_object.force_torque.fz) < robot_instance_object.lower_threshold:
-                # correct_force(robot_instance_object, True)
-                check_force(robot_instance_object)
+                #TODO: Check if correct force should be replaced with check force
+                correct_force(robot_instance_object, True)
                 
-            if abs(robot_instance_object.force_torque.fz) > robot_instance_object.upper_threshold:
-                # correct_force(robot_instance_object, False)
-                check_force(robot_instance_object)
+            elif abs(robot_instance_object.force_torque.fz) > robot_instance_object.upper_threshold:
+                correct_force(robot_instance_object, False)
 
             else: 
                 robot_instance_object.goal_pose.pose.position.z = robot_instance_object.current_pose.poseStamped.pose.position.z
@@ -152,21 +160,22 @@ def start_control_loop(robot_instance_object):
 
 if __name__ == "__main__":
     rospy.init_node("fz_control_loop", anonymous=True)
-    setup_control_mode.set_cartesian_impedance_control_mode([3000, 3000, 1000, 300, 300, 300], [0.7, 0.7, 0.7, 0.7, 0.7, 0.7], 2000, 0.7, 1000, 1000)
-    robot_instance = RobotInstance()
-    robot_instance.start_pose = rospy.wait_for_message("/iiwa/state/CartesianPose", CartesianPose, timeout=5)
+    
+    # setup_control_mode.set_cartesian_impedance_control_mode([3000, 3000, 1000, 300, 300, 300], [0.7, 0.7, 0.7, 0.7, 0.7, 0.7], 2000, 0.7, 1000, 1000)
+    # robot_instance = RobotInstance()
+    # robot_instance.start_pose = rospy.wait_for_message("/iiwa/state/CartesianPose", CartesianPose, timeout=5)
 
-    # Create goal pose
-    create_goal_pose_message(robot_instance, 1, 0.05)
-    # robot_instance.goal_pose = PoseStamped()
-    # robot_instance.goal_pose.header.stamp = rospy.Time.now()
-    # robot_instance.goal_pose.header.frame_id = 'iiwa_link_0'
-    # robot_instance.goal_pose.pose.position.x = robot_instance.current_pose.poseStamped.pose.position.x - 0.05
-    # robot_instance.goal_pose.pose.position.y = robot_instance.current_pose.poseStamped.pose.position.y 
-    # robot_instance.goal_pose.pose.position.z = robot_instance.current_pose.poseStamped.pose.position.z 
-    # robot_instance.goal_pose.pose.orientation.x = robot_instance.current_pose.poseStamped.pose.orientation.x
-    # robot_instance.goal_pose.pose.orientation.y = robot_instance.current_pose.poseStamped.pose.orientation.y
-    # robot_instance.goal_pose.pose.orientation.z = robot_instance.current_pose.poseStamped.pose.orientation.z
-    # robot_instance.goal_pose.pose.orientation.w = robot_instance.current_pose.poseStamped.pose.orientation.w
+    # # Create goal pose
+    # create_goal_pose_message(robot_instance, 1, 0.05)
+    # # robot_instance.goal_pose = PoseStamped()
+    # # robot_instance.goal_pose.header.stamp = rospy.Time.now()
+    # # robot_instance.goal_pose.header.frame_id = 'iiwa_link_0'
+    # # robot_instance.goal_pose.pose.position.x = robot_instance.current_pose.poseStamped.pose.position.x - 0.05
+    # # robot_instance.goal_pose.pose.position.y = robot_instance.current_pose.poseStamped.pose.position.y 
+    # # robot_instance.goal_pose.pose.position.z = robot_instance.current_pose.poseStamped.pose.position.z 
+    # # robot_instance.goal_pose.pose.orientation.x = robot_instance.current_pose.poseStamped.pose.orientation.x
+    # # robot_instance.goal_pose.pose.orientation.y = robot_instance.current_pose.poseStamped.pose.orientation.y
+    # # robot_instance.goal_pose.pose.orientation.z = robot_instance.current_pose.poseStamped.pose.orientation.z
+    # # robot_instance.goal_pose.pose.orientation.w = robot_instance.current_pose.poseStamped.pose.orientation.w
 
-    start_control_loop(robot_instance)
+    # start_control_loop(robot_instance)

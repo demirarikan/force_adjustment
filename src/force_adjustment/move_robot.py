@@ -9,8 +9,8 @@ def reset():
     newPose.header.stamp = rospy.Time.now()
     newPose.header.frame_id = 'iiwa_link_0'
     newPose.pose.position.x = 0.614237459705
-    newPose.pose.position.y = -0.0409711049467
-    newPose.pose.position.z = 0.147538457831
+    newPose.pose.position.y = -0.0009711049467
+    newPose.pose.position.z = 0.347538457831
     newPose.pose.orientation.x = 0.000466301293374
     newPose.pose.orientation.y = 0.999783635139
     newPose.pose.orientation.z = -0.00155468122314

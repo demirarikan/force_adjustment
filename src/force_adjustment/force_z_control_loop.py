@@ -42,10 +42,20 @@ class RobotInstance:
         self.new_pose_publisher.publish(pose)
 
     def pose_reached(self, desired_pose):
+        """
+        Compares current pose of the robot with the given pose and returns true if the pose is reached
+        """
         current_position = self.current_pose.pose.position
         current_orientation = self.current_pose.pose.orientation
         desired_position = desired_pose.pose.position
-        desired_orientation = desired_pose.pose.position
+        desired_orientation = desired_pose.pose.orientation
+
+        if abs(current_position.x - desired_position.x) < 0.0001 and\
+            abs(current_position.y - desired_position.y) < 0.0001 and\
+            abs(current_position.z - desired_position.z) < 0.0001:
+                return True
+        else: 
+            return False
 
     def generate_base_tool_transformation_matrix(self):
         translation_matrix = np.array([self.current_pose.pose.position.x,
@@ -68,7 +78,7 @@ class RobotInstance:
     def correct_force(self, low):
         if low:
             print("increasing force...")
-            transformed_coordinates = transform_tool_to_base(self.generate_base_tool_transformation_matrix(self), self.step_size)
+            transformed_coordinates = transform_tool_to_base(self.generate_base_tool_transformation_matrix(), self.step_size)
 
             new_pose = PoseStamped()
             new_pose.header.stamp = rospy.Time.now()
@@ -83,7 +93,7 @@ class RobotInstance:
             rospy.sleep(1)
         else: 
             print("decreasing force")
-            transformed_coordinates = transform_tool_to_base(self.generate_base_tool_transformation_matrix(self), -self.step_size)
+            transformed_coordinates = transform_tool_to_base(self.generate_base_tool_transformation_matrix(), -self.step_size)
 
             new_pose = PoseStamped()
             new_pose.header.stamp = rospy.Time.now()
@@ -98,30 +108,38 @@ class RobotInstance:
             rospy.sleep(1)
  
     def check_force(self):
+        print("checking force")
         if self.force_torque is not None and self.current_pose is not None:
-                if abs(self.force_torque.fz) < self.lower_threshold:
-                    self.correct_force(self, True)
+                if abs(self.force_torque.fz) < self.lower_deviation:
+                    self.correct_force(True)
                     
-                if abs(self.force_torque.fz) > self.upper_threshold:
-                    self.correct_force(self, False)
+                if abs(self.force_torque.fz) > self.upper_deviation:
+                    self.correct_force(False)
                 else:
                     return
 
     def start_control_loop(self):
+        print("starting control loop")
         while True:
             if self.force_torque is not None and self.current_pose is not None:
-                if abs(self.force_torque.fz) < self.lower_threshold:
+
+                if abs(self.force_torque.fz) < self.lower_deviation:
                     #TODO: Check if correct force should be replaced with check force
-                    self.correct_force(self, True)
+                    self.check_force()
+                    #self.correct_force(True)
 
-                elif abs(self.force_torque.fz) > self.upper_threshold:
-                    self.correct_force(self, False)
+                elif abs(self.force_torque.fz) > self.upper_deviation:
+                    self.check_force()
+                    #self.correct_force(False)
 
-                else: 
+                else:
                     self.goal_pose.pose.position.z = self.current_pose.pose.position.z
                     self.publish_pose(self.goal_pose)
+                    if self.pose_reached(self.goal_pose): 
+                        break
             else: 
                 continue
+        pass
 
 
 def transform_tool_to_base(transformation_matrix, step_size):

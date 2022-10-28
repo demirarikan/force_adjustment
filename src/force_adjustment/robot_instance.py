@@ -43,7 +43,9 @@ class RobotInstance:
 
     def pose_reached(self, desired_pose):
         """
-        Compares current pose of the robot with the given pose and returns true if the pose is reached
+        Tells if robot reached a given pose
+        desired_pose: Desired pose of the robot, PoseStamped type message
+        returns True if pose reached, False otherwise
         """
         current_position = self.current_pose.pose.position
         current_orientation = self.current_pose.pose.orientation
@@ -58,6 +60,10 @@ class RobotInstance:
             return False
 
     def generate_base_tool_transformation_matrix(self):
+        """
+        Generates transformation matri from base to the end effector of the robot
+        returns 4x4 transformation matrix
+        """
         translation_matrix = np.array([self.current_pose.pose.position.x,
                                        self.current_pose.pose.position.y,
                                        self.current_pose.pose.position.z])
@@ -76,6 +82,10 @@ class RobotInstance:
         return transformation_matrix
 
     def correct_force(self, low):
+        """
+        Moves the robot in the Z direction in the step size amount
+        low: True if the current force is lower than the desired force. False otherwise
+        """
         if low:
             print("increasing force...")
             transformed_coordinates = transform_tool_to_base(self.generate_base_tool_transformation_matrix(), self.step_size)
@@ -106,73 +116,69 @@ class RobotInstance:
             print("publishing new pose...")
             self.publish_pose(new_pose)
             rospy.sleep(1)
- 
-    def check_force(self):
-        print("checking force")
-        if self.force_torque is not None and self.current_pose is not None:
-                if abs(self.force_torque.fz) < self.lower_deviation:
-                    self.correct_force(True)
-                    
-                if abs(self.force_torque.fz) > self.upper_deviation:
-                    self.correct_force(False)
-                else:
-                    return
+
 
     def start_control_loop(self):
-        print("starting control loop")
+        """
+        Checks forces and moves the robot accordingly
+        """
+        print("Starting control loop")
         while True:
             if self.force_torque is not None and self.current_pose is not None:
-
                 if abs(self.force_torque.fz) < self.lower_deviation:
                     #TODO: Check if correct force should be replaced with check force
-                    self.check_force()
-                    #self.correct_force(True)
+                    #self.check_force()
+                    self.correct_force(True)
 
                 elif abs(self.force_torque.fz) > self.upper_deviation:
-                    self.check_force()
-                    #self.correct_force(False)
+                    #self.check_force()
+                    self.correct_force(False)
 
                 else:
+                    # Correct Z of goal pose with the new pressure thats being applied, otherwise robot wants to always move upwards
                     self.goal_pose.pose.position.z = self.current_pose.pose.position.z
                     self.publish_pose(self.goal_pose)
-                    if self.pose_reached(self.goal_pose): 
+                    if self.pose_reached(self.goal_pose):
                         break
             else: 
                 continue
         pass
 
 
+
+# Helper function
 def transform_tool_to_base(transformation_matrix, step_size):
     target_coordinates = np.array([0, 0, step_size, 1])
     return np.matmul(transformation_matrix, target_coordinates)
 
-
+# This is not even used
 # Creates goal pose message from input: (0,1,2)=(X,Y,Z) and distance in meters
-def create_goal_pose_message(robot_instance_object, axis, distance):
-    goal_pose = PoseStamped()
-    goal_pose.header.stamp = rospy.Time.now()
-    goal_pose.header.frame_id = 'iiwa_link_0'
+# def create_goal_pose_message(robot_instance_object, axis, distance):
+#     goal_pose = PoseStamped()
+#     goal_pose.header.stamp = rospy.Time.now()
+#     goal_pose.header.frame_id = 'iiwa_link_0'
 
-    goal_pose.pose.position.x = robot_instance_object.current_pose.pose.position.x
-    goal_pose.pose.position.y = robot_instance_object.current_pose.pose.position.y 
-    goal_pose.pose.position.z = robot_instance_object.current_pose.pose.position.z
+#     goal_pose.pose.position.x = robot_instance_object.current_pose.pose.position.x
+#     goal_pose.pose.position.y = robot_instance_object.current_pose.pose.position.y 
+#     goal_pose.pose.position.z = robot_instance_object.current_pose.pose.position.z
 
-    goal_pose.pose.orientation.x = robot_instance_object.current_pose.pose.orientation.x
-    goal_pose.pose.orientation.y = robot_instance_object.current_pose.pose.orientation.y
-    goal_pose.pose.orientation.z = robot_instance_object.current_pose.pose.orientation.z
-    goal_pose.pose.orientation.w = robot_instance_object.current_pose.pose.orientation.w
+#     goal_pose.pose.orientation.x = robot_instance_object.current_pose.pose.orientation.x
+#     goal_pose.pose.orientation.y = robot_instance_object.current_pose.pose.orientation.y
+#     goal_pose.pose.orientation.z = robot_instance_object.current_pose.pose.orientation.z
+#     goal_pose.pose.orientation.w = robot_instance_object.current_pose.pose.orientation.w
 
-    if(axis == 0):
-        goal_pose.pose.position.x += distance
+#     if(axis == 0):
+#         goal_pose.pose.position.x += distance
 
-    if(axis == 1):
-        goal_pose.pose.position.y += distance
+#     if(axis == 1):
+#         goal_pose.pose.position.y += distance
 
-    if(axis == 2):
-        goal_pose.pose.position.z += distance
-    return goal_pose
+#     if(axis == 2):
+#         goal_pose.pose.position.z += distance
+#     return goal_pose
 
 
+#This is used for testing
 if __name__ == "__main__":
     rospy.init_node("fz_control_loop", anonymous=True)
     

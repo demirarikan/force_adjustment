@@ -78,6 +78,9 @@ def create_force_torque_message(force_torque_values):
 if __name__ == "__main__":
 
     client = ForceSensorClient()
+    #
+    # Put the correct IP address of the computer running the force_sensor_server.py as host!
+    #
     client.open_igt_client = pyigtl.OpenIGTLinkClient(host="10.23.0.71", port=18947)
 
     # Setting up the sensor object
